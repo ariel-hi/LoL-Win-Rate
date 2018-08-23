@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html>
+<meta charset="utf-8">
+<head>
+  <style type="text/css">
+      #graph {
+          background-color: lavenderblush;
+          position: fixed;
+          left: 0px;
+          right: 0px;
+          top: 60px;
+          bottom: 0px;
+      }
+
+      span {
+        text-align: center;
+      }
+
+      .node circle {
+          fill: lightgrey;
+      }
+
+      .node circle[highlight=true]:hover {
+          fill: lightblue;
+      }
+
+      .node circle[glow=true]:hover {
+          stroke-width: 6px;
+          stroke: lightblue;
+      }
+
+      .node text {
+          font-size: 15px;
+          font-family: sans-serif;
+      }
+
+      .spinner {
+          border: 2px solid #3498db;
+          border-radius: 50%;
+          border-top: 8px solid #3498db;
+          width: 30px;
+          height: 30px;
+          animation: spin 6s linear infinite;
+      }
+
+      @keyframes spin {
+          0% { transform: rotate(0deg) skewY(0deg) skewX(0deg); }
+          25% { transform: rotate(270deg) skewY(30deg) skewX(-10deg);}
+          50% { transform: rotate(540deg) skewY(10deg) skewX(-25deg);}
+          75% { transform: rotate(810deg) skewY(15deg) skewX(-20deg);}
+          100% { transform: rotate(1080deg) skewY(0deg) skewX(0deg);}
+      }
+
+
+  </style>
+
+  <script data-require="d3@3.4.6" data-semver="3.4.6" src="//cdnjs.cloudflare.com/ajax/libs/d3/3.4.6/d3.min.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.6.10/angular.min.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.2.7/angular-resource.min.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.2.7/angular-sanitize.js"></script>
+  <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+  <script src="http://underscorejs.org/underscore-min.js"></script>
+</head>
+
+<body>
+</div>
+  <div ng-app="myApp">
+    <div ng-controller="Controller">
+      <input type="text" placeholder="Summoner Name" ng-model="name">
+      <button type="submit" ng-click="searchSummoner(name)">Submit</button>
+      <span class="nameplate" ng-bind-html="trustedName"></span><hr><hr><hr>
+      <div id="graph">
+        <div ng-show="loading" class="spinner"></div>
+      </div>
+      <svg>
+        <defs>
+          <clipPath id="clip0">
+            <circle cx="0" cy="0" r="30"></circle>
+          </clipPath>
+          <clipPath id="clip1">
+            <circle cx="0" cy="0" r="40"></circle>
+          </clipPath>
+          <clipPath id="clip5">
+            <circle cx="0" cy="0" r="50"></circle>
+          </clipPath>
+          <clipPath id="clip10">
+            <circle cx="0" cy="0" r="60"></circle>
+          </clipPath>
+          <clipPath id="clip20">
+            <circle cx="0" cy="0" r="70"></circle>
+          </clipPath>
+        </defs>
+      </svg>
+    </div>
+  </div>
+
+  <script>
+      var myApp = angular.module('myApp', ['ngSanitize']);
+
+      myApp.controller('Controller', function ($scope, $http, $sce) {
+
+          var idmap         = {};
+          var champCounts   = {};
+          var champMatches  = {};
+          var champAllies   = {};
+          var champEnemies  = {};
+          var allyNodeInfo  = {};
+          var enemyNodeInfo = {};
+          var matchCount    = null;
+          var nodeCount     = null;
+          var gameCount     = null;
+          var matches       = null;
+          var accountId     = 0;
+          var patch         = "8.16.1";
+          var imgUrl        = "http://ddragon.leagueoflegends.com/cdn/"+patch+"/img/champion/";
+
+          var radius        = 50;
+          var zoomMin       = 0.25;
+          var zoomMax       = 2.0;
+          var duration      = 750;
+
+          var viewerWidth   = $(document).width();
+          var viewerHeight  = $(document).height() - 40;
+          var diagonal      = d3.svg.diagonal().projection(function (d) { return [d.y, d.x]; });
+          var tree          = d3.layout.tree().size([viewerHeight, viewerWidth]);
+          var zoomListener  = null;
+
+          var root          = null;
+          var resizeId      = null;
+
+          var baseSvg       = null;
+          var svgGroup      = null;
+          var startcrd      = null;
+          var endcrd        = null;
+
+          var mini          = 30;
+          var small         = 40;
+          var medium        = 50;
+          var large         = 60;
+          var giant         = 70;
+
+          $scope.loading    = false;
+
+
+
+          var dragListener  = d3.behavior.drag()
+              .on("dragstart", function (d) {
+                  startcrd = [event.clientX, event.clientY]
+              })
+              .on("dragend", function (d) {
+                  endcrd  = [event.clientX, event.clientY];
+                  var dist  = Math.sqrt(Math.pow(startcrd[0] - endcrd[0], 2) + Math.pow(startcrd[1] - endcrd[1], 2));
+
+                  if (dist < 5) {
+                      click(d);
+                  }
+              });
+
+          function zoom() {
+              svgGroup.attr("transform", "translate(" + d3.event.translate + ")scale(" + d3.event.scale + ")");
+          }
+
+          function click(d) {
+              function doSetTimeout(i) {
+                  setTimeout(function() {
+                      $scope.searchEnemy(d, matches[i]);
+                  }, 300 * i);
+              }
+
+              var matches;
+
+              if (d.type === "champion") {
+                  if (!root._children || root.children.length === 0) {
+                      collapseSiblings(d);
+                      update(root);
+                      centerNode(root);
+                  }
+
+                  if (!d.searched && !$scope.loading) {
+                      $scope.loading = true;
+                      d.searched = true;
+                      matches = champMatches[d.name];
+                      champEnemies[d.name] = [];
+                      gameCount = 0;
+                      allyNodeInfo = {};
+                      enemyNodeInfo = {};
+                      for (var i = 0; i < matches.length; i++) {
+                          doSetTimeout(i);
+                      }
+                  } else {
+                      expand(d);
+                      update(d);
+                      centerNode(d);
+                  }
+              }
+
+              if (d.type === "root" && !d.searched) {
+                  d.searched = true;
+                  $scope.searchMatches();
+              } else {
+                  if (d.type === "root") {
+                      if (d._children && d._children.length > 0) {
+                          var c = d.children[0];
+                          collapse(c);
+                          update(c);
+                          expand(d);
+                          update(root);
+                          centerNode(root);
+                      }
+                  }
+              }
+          }
+
+          function collapseSiblings(d) {
+              d.parent._children = _.without(d.parent.children, d);
+              if (d.parent._children === []) d.parent._children = null;
+              d.parent.children = [d];
+          }
+
+          function collapse(d) {
+              if (d.type === "champion") {
+                  if (d.children && d.children[0].stats) {
+                      d._children = _.without(d.children, d.children[0]);
+                      d.children = [d.children[0]];
+                  } else {
+                      d._children = d.children;
+                      d.children = null;
+                  }
+              }
+          }
+
+          function expand(d) {
+              d.children = _.union(d.children, d._children);
+              d._children = null;
+          }
+
+          function centerNode(source, zoomval) {
+              source = root;
+              zoomval = (zoomval || zoomListener.scale());
+              var scale = Math.max(Math.min(zoomval, zoomMax), zoomMin);
+              var x     = -source.x0 * scale + viewerWidth / 2;
+              var y     = -source.y0 * scale + viewerHeight / 2;
+              baseSvg.select('g').transition()
+                  .duration(duration)
+                  .attr("transform", "translate(" + x + "," + y + ")scale(" + scale + ")");
+              zoomListener.scale(scale);
+              zoomListener.translate([x, y]);
+          }
+
+          // 0-0
+          // 1-0 0-1
+          // 2-0 1-1 0-2
+          // 3-0 2-1 1-2 0-3
+          // 4-0 3-1 2-2 1-3 0-4
+          // 4-0 > 3-0 > 2-0 > 3-1 > 2-1 > 1-0 > 2-2 > 1-1 > 0-1 > 1-2 > 1-3 > 0-2 > 0-3 > 0-4
+
+          function binaryInsert(arr, item, start, end) {
+              var half = Math.floor((start + end) / 2);
+              var final = start === end;
+
+              var net = item["ratio"] + item["win"]*0.02 - item["loss"]*0.01;
+              var halfnet = arr[half]["ratio"] + arr[half]["win"]*0.02 - arr[half]["loss"]*0.01;
+
+              var name = item["name"];
+              var halfname = arr[half]["name"];
+
+              if (net < halfnet) {
+                  if (final) {
+                      arr.splice(start+1, 0, item);
+                      return;
+                  }
+                  binaryInsert(arr, item, half+1, end);
+              } else if (net > halfnet) {
+                  if (final) {
+                      arr.splice(start, 0, item);
+                      return;
+                  }
+                  binaryInsert(arr, item, start, half);
+              } else {
+                  // compare names
+                  if (name < halfname) {
+                      if (final) {
+                          arr.splice(start, 0, item);
+                          return;
+                      }
+                      binaryInsert(arr, item, start, half);
+                  } else if (name > halfname) {
+                      if (final) {
+                          arr.splice(start+1, 0, item);
+                          return;
+                      }
+                      binaryInsert(arr, item, half+1, end);
+                  } else {
+                      console.log("Two nodes have the same name.")
+                  }
+              }
+          }
+
+          function update(source) {
+              tree = tree.size([viewerHeight, viewerWidth]);
+
+              var nodes = tree.nodes(root);
+
+              nodes.forEach(function (d) {
+                  var size;
+                  if (d.type === "root") {
+                      d.x = 0;
+                      d.y = 0;
+                  } else if (d.type === "ally") {
+                      size = champAllies[d.parent.name].size;
+
+                      if (d.id < size % 4) d.x = d.parent.x + (d.id - (size % 4)/2 + 1/2) * 75 - 212.5;
+                      else d.x = d.parent.x + (((d.id - (size % 4)) % 4) - 2) * 75 - 175;
+
+                      if (Math.round(d.parent.y) > 0) d.y = d.parent.y + 100 * (Math.floor((size - d.id - 1)/4) + 1);
+                      else d.y = d.parent.y - 100 * (Math.floor((size - d.id - 1)/4) + 1);
+                  } else if (d.type === "enemy") {
+                      size = champEnemies[d.parent.name].size;
+
+                      if (d.id < size % 5) d.x = d.parent.x + (d.id - (size % 5)/2 + 1/2) * 75 + 250;
+                      else d.x = d.parent.x + (((d.id - (size % 5)) % 5) - 2) * 75 + 250;
+
+                      if (Math.round(d.parent.y) > 0) d.y = d.parent.y + 100 * (Math.floor((size - d.id - 1)/5) + 1);
+                      else d.y = d.parent.y - 100 * (Math.floor((size - d.id - 1)/5) + 1);
+                  } else if (d.type === "champion" && root.children.length === 1) {
+                      d.x = d.parent.x;
+                      d.y = d.parent.y - 100;
+                  } else
+                      {
+                      var coeff     = 0;
+                      var denom     = 0;
+                      var product   = 0;
+                      var inner     = 100;
+                      var biginner  = 150;
+                      var mid       = 250;
+                      var bigmid    = 300;
+                      var outer     = 400;
+                      var bigouter  = 450;
+                      var extra     = 550;
+
+                      if (d.type === "info") coeff += radius;
+                      if (d.id < 8 && (nodeCount <= 8 || nodeCount >= 14)) { // inner
+                          coeff += inner;
+                          denom = Math.min(nodeCount, 8);
+                          product = d.id/denom * 2 * Math.PI;
+                          d.x = -Math.cos(product) * coeff;
+                          d.y = -Math.sin(product) * coeff;
+                      }
+                      else if (d.id < 14 && nodeCount > 8 && nodeCount < 14) { // biginner
+                          coeff += biginner;
+                          denom = nodeCount;
+                          product = d.id/denom * 2 * Math.PI;
+                          d.x = -Math.cos(product) * coeff;
+                          d.y = -Math.sin(product) * coeff;
+                      }
+                      else if (d.id < 28 && (nodeCount <= 28 || nodeCount >= 34)) { // mid
+                          coeff += mid;
+                          denom = Math.min(nodeCount - 8, 20);
+                          product = (d.id-8)/denom * 2 * Math.PI;
+                          d.x = -Math.cos(product) * coeff;
+                          d.y = -Math.sin(product) * coeff;
+                      }
+                      else if (d.id < 34 && nodeCount > 28 && nodeCount < 34) { // bigmid
+                          coeff += bigmid;
+                          denom = nodeCount - 8;
+                          product = (d.id-8)/denom * 2 * Math.PI;
+                          d.x = -Math.cos(product) * coeff;
+                          d.y = -Math.sin(product) * coeff;
+                      }
+                      else if (d.id < 60 && (nodeCount <= 60 || nodeCount >= 66)){ // outer
+                          coeff += outer;
+                          denom = Math.min(nodeCount - 28, 32);
+                          product = (d.id-28)/denom * 2 * Math.PI;
+                          d.x = -Math.cos(product) * coeff;
+                          d.y = -Math.sin(product) * coeff;
+                      }
+                      else if (d.id < 66 && nodeCount > 60 && nodeCount < 66) { // bigouter
+                          coeff += bigouter;
+                          denom = nodeCount - 28;
+                          product = (d.id-28)/denom * 2 * Math.PI;
+                          d.x = -Math.cos(product) * coeff;
+                          d.y = -Math.sin(product) * coeff;
+                      }
+                      else if (d.id < 100) { // extra
+                          coeff += extra;
+                          denom = nodeCount - 60;
+                          product = (d.id-60)/denom * 2 * Math.PI;
+                          d.x = -Math.cos(product) * coeff;
+                          d.y = -Math.sin(product) * coeff;
+                      }
+                      else {
+                          product = (d.id-100)/d.parent.count * 2 * Math.PI;
+                          d.x = -Math.cos(product) * 300;
+                          d.y = -Math.sin(product) * 300;
+                      }
+                  }
+              });
+
+              var node = svgGroup.selectAll("g.node")
+                  .data(nodes, function (d) {
+                      return d.name;
+                  });
+
+              var nodeEnter = node.enter().append("g")
+                  .call(dragListener)
+                  .attr("class", "node")
+                  .attr("transform", function (d) {
+                      return "translate(" + source.x0 + "," + source.y0 + ")";
+                  });
+
+              nodeEnter.append("circle")
+                  .attr("r", function(d) {
+                      if (d.type === "root") return radius;
+                      else if (d.type === "champion") return small;
+                      else if (d.type === "ally" || d.type === "enemy") return mini;
+                      else return small/2;
+                  })
+                  .attr("id", function(d) {
+                      return d.id;
+                  })
+                  .attr("stroke", function(d) {
+                      if (d.type === "ally" || d.type === "enemy") {
+                          return "hsl(" + (d.ratio * 6/5) + ", 50%, 50%)";
+                      } else {
+                          return "white";
+                      }
+                  })
+                  .attr("stroke-width", function(d) {
+                      if (d.type === "ally" || d.type === "enemy") return 8;
+                      else return 3;
+                  });
+
+              nodeEnter.append("image")
+                  .attr("xlink:href",  function(d) { return d.img;})
+                  .attr("x", function(d) {
+                      if (d.type === "champion") return -small-7;
+                      else return -mini-6;
+                  })
+                  .attr("y", function(d) {
+                      if (d.type === "champion") return -small-7;
+                      else return -mini-6;
+                  })
+                  .attr("width", function(d) {
+                      if (d.type === "champion") return small*2+14;
+                      else return mini*2+12;
+                  })
+                  .attr("height", function(d) {
+                      if (d.type === "champion") return small*2+14;
+                      else return mini*2+12;
+                  })
+                  .attr("clip-path", function(d) {
+                      if (d.type === "champion") return "url(#clip1)";
+                      else return "url(#clip0)";
+                  })
+                  .attr("pointer-events", "none");
+
+              nodeEnter.append("text")
+                  .attr("x", -radius)
+                  .attr("y", function(d) {
+                      if (d.type === "champion" && (d.win + d.loss + d.remake) > 0) return -radius;
+                      else if (d.type === "ally" || d.type === "enemy") return -small;
+                  })
+                  .attr("dx", radius)
+                  .attr("dy", ".35em")
+                  .attr('class', 'winrate')
+                  .attr("text-anchor", "middle")
+                  .attr("pointer-events", "none")
+                  .text(function (d) {
+                      if (d.type === "champion" && d.win + d.loss === 0 && typeof d._children !== "undefined") {
+                          if (d.remake > 0) return "No games complete: only remakes"
+                      }
+                      else if (d.type === "ally" || d.type === "enemy" || d.type === "champion" && d.children != null) {
+                          return d.win + "-" + d.loss;
+                      }
+                  })
+                  .style("fill-opacity", 0);
+
+              nodeEnter.append("tspan")
+                  .attr("x", -radius)
+                  .attr("y", function(d) {
+                      if (d.type === "ally" || d.type === "enemy") return -small * 2;
+                  })
+                  .attr("dx", radius)
+                  .attr("dy", ".35em")
+                  .attr('class', 'percentage')
+                  .attr("text-anchor", "middle")
+                  .attr("pointer-events", "none")
+                  .text(function (d) {
+                      var size;
+
+                      if (d.type === "ally" && d.id === 0) {
+                          size = champAllies[d.parent.name].size;
+                          return "Ally"
+
+                      }
+
+                      else if (d.type === "enemy" && d.id === 0) {
+                          size = champEnemies[d.parent.name].size;
+                          return "Enemy"
+                      }
+                  })
+                  .style("fill-opacity", 0);
+
+
+              var nodeUpdate = node.transition()
+                  .duration(duration)
+                  .attr("transform", function (d) {
+                      return "translate(" + d.x + "," + d.y + ")";
+                  });
+
+              nodeUpdate.select("circle")
+                  .attr("highlight", function(d) {
+                      return !!(d.type === "root" && (d._children || !d.searched));
+                  })
+                  .attr("glow", function(d) {
+                      return d.type === "champion" && !d.children;
+                  })
+                  .attr("r", function(d) {
+                      if (d.type === "root") return radius;
+                      else if (d.type === "champion") return small;
+                      else if (d.type === "ally" || d.type === "enemy") return mini;
+                      else return small/2;
+                  })
+                  .style("fill-opacity", 1);
+
+              nodeUpdate.select("text")
+                  .attr("x", -radius)
+                  .attr("y", function(d) {
+                      if (d.type === "champion" && (d.win + d.loss + d.remake) > 0) return -radius;
+                      else if (d.type === "ally" || d.type === "enemy") return -small;
+                  })
+                  .attr("dx", radius)
+                  .attr("dy", ".35em")
+                  .attr('class', 'winrate')
+                  .attr("text-anchor", "middle")
+                  .attr("pointer-events", "none")
+                  .text(function (d) {
+                      if (d.type === "champion" && d.win === 0 && d.loss === 0 && typeof d._children !== "undefined") {
+                          // if (d.remake === 0) return "Loading...";
+                          if (d.remake > 0) return "No games complete: only remakes"
+                      }
+                      else if (d.type === "ally" || d.type === "enemy" || d.type === "champion" && d.children != null) {
+                          return d.win + "-" + d.loss;
+                      }
+                  })
+                  .style("fill-opacity", 1);
+
+              var nodeExit = node.exit().transition()
+                  .duration(duration)
+                  .attr("transform", function (d) {
+                      return "translate(" + d.parent.x0 + "," + d.parent.y0 + ")";
+                  })
+                  .remove();
+
+              nodeExit.select("circle")
+                  .attr("r", 0);
+
+              nodeExit.select("text")
+                  .attr("x", -radius)
+                  .style("fill-opacity", 0);
+
+              nodes.forEach(function (d) {
+                  d.x0 = d.x;
+                  d.y0 = d.y;
+              });
+          }
+
+          function doneResizing(){
+              viewerWidth   = $(document).width();
+              viewerHeight  = $(document).height() - 40;
+
+              d3.layout.tree().size([viewerHeight, viewerWidth]);
+
+              baseSvg
+                  .attr('width', viewerWidth)
+                  .attr('height', viewerHeight);
+
+              if (!root) return;
+
+              update(root);
+              centerNode(root);
+          }
+
+          function resize() {
+              clearTimeout(resizeId);
+              resizeId = setTimeout(doneResizing, 500);
+          }
+
+          $scope.searchEnemy = function(d, gameId) {
+              $scope.searchEnemyHelper = function(d, gameId) {
+                  return $http.get("/getEnemy/" + gameId + "/" + accountId).then(function(data) {
+                      function setupAlly() {
+                          if (!(allychamp in allyNodeInfo)) {
+                              newNode = {
+                                  "name": d.name + "-" + allychamp + "-Ally",
+                                  "img": imgUrl + allychamp + ".png",
+                                  "win": win ? 1 : 0,
+                                  "loss": 1 - win,
+                                  "ratio": win ? 100 : 0,
+                                  "parent": d,
+                                  "type": "ally",
+                                  "searched": false
+                              };
+                              allyNodeInfo[allychamp] = newNode;
+                          } else {
+                              allyNodeInfo[allychamp].win += win;
+                              allyNodeInfo[allychamp].loss += (1 - win);
+
+                              var wins = allyNodeInfo[allychamp].win;
+                              var losses = allyNodeInfo[allychamp].loss;
+
+                              var ratio = (wins/(wins + losses) * 100);
+                              if (ratio.toString().indexOf('.') !== -1) ratio = parseFloat(ratio.toFixed(1));
+                              allyNodeInfo[allychamp].ratio = ratio;
+                          }
+                      }
+
+                      function setupEnemy() {
+                          if (!(enemychamp in enemyNodeInfo)) {
+                              newNode = {
+                                  "name": d.name + "-" + enemychamp + "-Enemy",
+                                  "img": imgUrl + enemychamp + ".png",
+                                  "win": win ? 1 : 0,
+                                  "loss": 1 - win,
+                                  "ratio": win ? 100 : 0,
+                                  "parent": d,
+                                  "type": "enemy",
+                                  "searched": false
+                              };
+                              enemyNodeInfo[enemychamp] = newNode;
+                          } else {
+                              enemyNodeInfo[enemychamp].win += win;
+                              enemyNodeInfo[enemychamp].loss += (1 - win);
+
+                              var wins = enemyNodeInfo[enemychamp].win;
+                              var losses = enemyNodeInfo[enemychamp].loss;
+
+                              var ratio = (wins/(wins + losses) * 100);
+                              if (ratio.toString().indexOf('.') !== -1) ratio = parseFloat(ratio.toFixed(1));
+                              enemyNodeInfo[enemychamp].ratio = ratio;
+                          }
+                      }
+                      
+                      var i;
+                      var info = data.data;
+                      var time = info.gameDuration;
+
+                      // console.log(gameId);
+
+                      if (time < 400) {
+                          // lub 2672288481 Sejuani
+                          // console.log("Game duration", time);
+                          gameCount++;
+                          d.remake += 1;
+                          return;
+                      }
+
+                      var pids = info.participantIdentities;
+                      var mypid = -1;
+                      var parts = info.participants;
+
+                      if (!pids || !pids.length) console.log("pid fail", info);
+
+                      for (i=0; i<pids.length; i++) {
+                          if (pids[i].player.currentAccountId === accountId) {
+                              mypid = i;
+                              break;
+                          }
+                      }
+
+                      var player = parts[mypid];
+                      var lane = player.timeline.lane;
+                      var role = player.timeline.role;
+                      var win = player.stats.win;
+                      var myTeam = player.teamId/100 - 1;
+                      var enemyTeam = 1 - myTeam;
+                      var newNode;
+
+                      var enemy, enemyid, enemylane, enemyrole, enemychamp;
+                      var ally, allyid, allylane, allyrole, allychamp;
+
+                      var flag = false;
+
+                      for (i=myTeam*5; i<myTeam*5+5; i++) {
+                          if (i === mypid) continue;
+                          ally = parts[i];
+                          allyid = ally.championId; // for all
+                          allychamp = idmap[allyid]; // for all
+                          setupAlly(); // for all
+                      }
+
+                      for (i=enemyTeam*5; i<enemyTeam*5+5; i++) {
+                      enemy = parts[i];
+                      enemylane = enemy.timeline.lane;
+                      enemyrole = enemy.timeline.role;
+                      enemyid = enemy.championId; // for all
+                      enemychamp = idmap[enemyid]; // for all
+                      setupEnemy(); // for all
+                  }
+
+                      d.win += win;
+                      d.loss += (1 - win);
+
+                      gameCount++; // for all
+                  });
+              };
+
+              $scope.searchEnemyHelper(d, gameId).then(function() {
+                  if (gameCount === d.count) {
+                      console.log(root.name + ":", d.count, "games as", d.name);
+                      // console.log("YES nw!", id, gameCount, d.count);
+                      if (!d.children) {
+                          d.children = []
+                      }
+
+                      var allies = [];
+                      var enemies = [];
+                      var champion;
+                      var i;
+
+                      for (champion in allyNodeInfo) {
+                          if (allyNodeInfo.hasOwnProperty(champion)) {
+                              if (allies.length === 0) {
+                                  allies = [allyNodeInfo[champion]];
+                              } else {
+                                  binaryInsert(allies, allyNodeInfo[champion], 0, allies.length-1);
+                              }
+                          }
+                      }
+                      allyNodeInfo["size"] = allies.length;
+
+                      for (i = 0; i < allies.length; i++) {
+                          allies[i].id = i;
+                      }
+
+                      for (champion in enemyNodeInfo) {
+                          if (enemyNodeInfo.hasOwnProperty(champion)) {
+                              if (enemies.length === 0) {
+                                  enemies = [enemyNodeInfo[champion]];
+                              } else {
+                                  binaryInsert(enemies, enemyNodeInfo[champion], 0, enemies.length-1);
+                              }
+                          }
+                      }
+                      enemyNodeInfo["size"] = enemies.length;
+
+                      for (i = 0; i < enemies.length; i++) {
+                          enemies[i].id = i;
+                      }
+
+                      d.children = _.union(allies, enemies);
+
+                      champAllies[d.name] = allyNodeInfo;
+                      champEnemies[d.name] = enemyNodeInfo;
+                      update(d);
+                      centerNode(d);
+                      $scope.loading = false;
+                  } else {
+                      // console.log("not yet", gameCount, d.count);
+                  }
+              });
+          };
+
+          $scope.moreInfo = function(d) {
+              var newNode = {
+                  "name": d.name + "Num",
+                  "id": d.id,
+                  "parent": d,
+                  "type": "stat",
+                  "searched": false,
+                  "stats": true
+              };
+
+              d.children = [newNode];
+          };
+
+          $scope.searchMatches = function() {
+              $scope.searchMatchesHelper = function() {
+                  return $http.get("/getMatches/" + accountId).then(function(data) {
+                      champCounts   = {};
+                      champMatches  = {};
+                      matches       = data.data.matches;
+                      matchCount    = matches ? matches.length : 0;
+
+                      if (matches) {
+                          for (var i = 0; i < matches.length; i++) {
+                              var match = matches[i];
+                              var gameId = match.gameId;
+                              var champion = idmap[match.champion];
+                              champCounts[champion] = ~~champCounts[champion] + 1;
+                              if (champion in champMatches) {
+                                  champMatches[champion].push(gameId);
+                              } else {
+                                  champMatches[champion] = [gameId];
+                              }
+                          }
+                          matchCount = i;
+                      }
+                  });
+              };
+
+              $scope.searchMatchesHelper().then(function() {
+                  nodeCount = 0;
+
+                  var sorted = [];
+                  for(var key in champCounts) {
+                      sorted[sorted.length] = key;
+                  }
+                  sorted.sort();
+
+                  for (var i=0; i<sorted.length; i++) {
+                      var champion = sorted[i];
+                      var count = champCounts[champion];
+                      var newNode = {
+                          "name": champion,
+                          "id": nodeCount++,
+                          "count": count,
+                          "img": imgUrl + champion + ".png",
+                          "win": 0,
+                          "loss": 0,
+                          "remake": 0,
+                          "parent": root,
+                          "type": "champion",
+                          "searched": false
+                      };
+
+                      // $scope.moreInfo(newNode);
+
+                      if (root.children == null) {
+                          root.children = [];
+                      }
+
+                      root.children.push(newNode);
+                  }
+
+                  update(root);
+                  if (root.children) {
+                      if (root.children.length >= 66) centerNode(root, 0.55);
+                      else if (root.children.length >= 34) centerNode(root, 0.65);
+                      else centerNode(root, 0.9);
+                  }
+                  else centerNode(root, 0.9);
+
+                  $scope.loading = false;
+              })
+          };
+
+          $scope.searchSummoner = function(name) {
+              $scope.newGraph = function(name) {
+                  return $http.get("/getUser/" + name).then(function(data) {
+                      return data.data;
+                  });
+              };
+
+              if (!name) return;
+
+              $scope.loading = true;
+              nodeCount = null;
+
+              $scope.newGraph(name).then(function(data) {
+                  if (data.status) return;
+
+                  $("#graph").html("");
+                  baseSvg = d3.select("#graph").append("svg")
+                      .attr("width", viewerWidth)
+                      .attr("height", viewerHeight)
+                      .call(zoomListener);
+
+                  svgGroup = baseSvg.append("g");
+
+                  accountId = data.accountId;
+
+                  root = {
+                      "name": data.name,
+                      "parent": null,
+                      "type": "root",
+                      "id": -1,
+                      "x0": viewerHeight / 2,
+                      "y0": 0,
+                      "searched": false
+                  };
+
+                  $scope.trustedName = $sce.trustAsHtml('<b style="text-align:center;display:grid;font-size:150%">' + data.name + '</b>');
+
+                  click(root);
+              });
+          };
+
+          $scope.init = function() {
+              $http.get("/getChampions/").then(function(data) {
+                  var championInfo = data.data.data;
+
+                  for (var champion in championInfo) {
+                      if (championInfo.hasOwnProperty(champion)) {
+                          idmap[championInfo[champion].key] = champion;
+                      }
+                  }
+              });
+          };
+
+          zoomListener = d3.behavior.zoom().scaleExtent([zoomMin, zoomMax]).on("zoom", zoom);
+
+          window.addEventListener("resize", resize);
+          $scope.init();
+      });
+
+  </script>
+
+</body>
+</html>
