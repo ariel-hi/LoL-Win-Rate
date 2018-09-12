@@ -11,11 +11,6 @@ def index():
     return render_template("base.html")
 
 
-@app.route('/index', methods=['GET'])
-def darius():
-    return render_template('index.html')
-
-
 @app.route("/getUser/<user>/<region>", methods=['GET'])
 def getUser(user, region):
     url = "https://{}.api.riotgames.com/lol/summoner/v3/summoners/by-name/{}?api_key={}".format(region, user, token)
@@ -41,9 +36,6 @@ def getChampions():
     url = "http://ddragon.leagueoflegends.com/cdn/{}/data/en_US/champion.json".format(patch)
     return jsonify(callAPI(url, "GET"))
 
-@app.route("/infinity/", methods=['GET'])
-def infinity():
-    return jsonify([])
 
 def callAPI(url, method):
     response = requests.request(method, url, verify=False)
