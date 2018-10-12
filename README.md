@@ -2,6 +2,7 @@
 ### League of Legends Win Rate Visualizer
 
 Now available on http://www.statly.xyz
+
 Currently waiting for an improved API Key.
 ___
 
