@@ -12,6 +12,3 @@ Replace ```app.py``` line 6's 'INSERT KEY HERE' with a RIOT API Key generated at
 Rate limit for these basic keys for reference:
 * 20 requests every 1 second
 * 100 requests every 2 minutes
-
-___
-
