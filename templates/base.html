@@ -13,6 +13,10 @@
       overflow:hidden;
     }
 
+    b {
+      padding-left: 131.32px;
+    }
+
     span {
       text-align: center;
     }
@@ -43,20 +47,20 @@
   <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
   <script src="http://underscorejs.org/underscore-min.js"></script>
 </head>
-
+<link rel="icon" href="../static/tab/S.png">
 <body>
 </div>
 <div ng-app="myApp">
   <div ng-controller="Controller">
-    <input type="text" placeholder="Summoner Name" ng-model="name">
+    <input style="text-align:left;" type="text" placeholder="Summoner Name" ng-model="name">
     <select ng-model="region" ng-options="r.id as r.name for r in regionlist"></select>
     <select ng-model="queue" ng-options="q.id as q.name for q in queuelist"></select>
-    <button type="submit" ng-click="searchSummoner(name, region, queue)">Submit</button>
-    <span class="nameplate" ng-bind-html="trustedName"></span><hr><hr><hr>
+    <button type="submit" ng-click="searchSummoner(name, region, queue)">Search</button>
+    <img style="float:right;" src="../static/tab/Banner.png" height="40" width="131.32">
+    <span class="nameplate" ng-bind-html="trustedName"></span>
     <div id="graph"></div>
   </div>
 </div>
-
 
 <script>
     var myApp = angular.module('myApp', ['ngSanitize']);
@@ -79,7 +83,7 @@
         // var patch         = "8.17.1";
         // var imgUrl        = "http://ddragon.leagueoflegends.com/cdn/"+patch+"/img/champion/";
         var imgUrl        = "../static/icons/";
-        var infUrl        = "../static/loading/infinity.gif";
+        var infUrl        = "../static/loading/fastinfinity.gif";
 
         var zoomMin       = 0.25;
         var zoomMax       = 2.0;
@@ -203,16 +207,14 @@
                 d.searched = true;
                 $scope.searchMatches();
             } else {
-                if (d.type === "root") {
-                    if (focus) {
-                        var c = d.children[0];
-                        focus = null;
-                        collapse(c);
-                        update(c);
-                        expand(d);
-                        update(root);
-                        centerNode(root);
-                    }
+                if (d.type === "root" && focus) {
+                    var c = d.children[0];
+                    focus = null;
+                    collapse(c);
+                    update(c);
+                    expand(d);
+                    update(root);
+                    centerNode(root);
                 }
             }
         }
@@ -250,6 +252,13 @@
             var scale = Math.max(Math.min(zoomval, zoomMax), zoomMin);
             var x     = -source.x0 * scale + viewerWidth / 2;
             var y     = -source.y0 * scale + viewerHeight / 2;
+            if (source.type === "champion") {
+                var allysize = champAllies[source.name].size;
+                var enemysize = champEnemies[source.name].size;
+                var rows = Math.max(Math.floor(allysize/4), Math.floor(enemysize/5));
+
+                y -= Math.min(viewerHeight / 2 - 90, 90 + (45*rows));
+            }
             baseSvg.select('g').transition()
                 .duration(duration)
                 .attr("transform", "translate(" + x + "," + y + ")scale(" + scale + ")");
@@ -264,47 +273,52 @@
             else return url + champion + imgtype;
         }
 
-        function binaryInsert(arr, item, start, end) {
-            var half = Math.floor((start + end) / 2);
-            var final = start === end;
+        Array.prototype.quick_sort = function (comp) {
+            if (this.length < 2) { return this; }
 
-            var net = item["ratio"] + item["win"]*0.02 - item["loss"]*0.01;
-            var halfnet = arr[half]["ratio"] + arr[half]["win"]*0.02 - arr[half]["loss"]*0.01;
+            var pivot = this[Math.round(this.length / 2)];
 
-            var name = item["name"];
-            var halfname = arr[half]["name"];
+            return this.filter(x => comp(x, pivot) == -1)
+                .quick_sort(comp)
+                .concat(this.filter(x => comp(x, pivot) == 0))
+                .concat(this.filter(x => comp(x, pivot) == 1).quick_sort(comp));
+        };
 
-            if (net < halfnet) {
-                if (final) {
-                    arr.splice(start+1, 0, item);
-                    return;
-                }
-                binaryInsert(arr, item, half+1, end);
-            } else if (net > halfnet) {
-                if (final) {
-                    arr.splice(start, 0, item);
-                    return;
-                }
-                binaryInsert(arr, item, start, half);
-            } else {
-                // compare names
-                if (name < halfname) {
-                    if (final) {
-                        arr.splice(start, 0, item);
-                        return;
-                    }
-                    binaryInsert(arr, item, start, half);
-                } else if (name > halfname) {
-                    if (final) {
-                        arr.splice(start+1, 0, item);
-                        return;
-                    }
-                    binaryInsert(arr, item, half+1, end);
-                } else {
-                    console.log("Two nodes have the same name.")
-                }
+        var winrateComparator = function(a,b) {
+            var aratio  = a["ratio"] + a["win"]*0.02 - a["loss"]*0.01;
+            var bratio  = b["ratio"] + b["win"]*0.02 - b["loss"]*0.01;
+
+            if (aratio > bratio) {
+                return -1;
+            } else if (aratio < bratio) {
+                return 1;
             }
-        }
+
+            var aname   = a["name"];
+            var bname   = b["name"];
+
+            if (aname < bname) {
+                return -1;
+            } else if (aname > bname) {
+                return 1;
+            } else {
+                return 0;
+            }
+        };
+
+        var champComparator = function(a,b) {
+            if (a[1] > b[1]) {
+                return -1;
+            } else if (a[1] < b[1]) {
+                return 1;
+            } else if (a[0] < b[0]) {
+                return -1;
+            } else if (a[0] > b[0]) {
+                return 1;
+            } else {
+                return 0;
+            }
+        };
 
         function update(source) {
             tree = tree.size([viewerHeight, viewerWidth]);
@@ -319,87 +333,77 @@
                 } else if (d.type === "ally") {
                     size = champAllies[d.parent.name].size;
 
-                    if (d.id < size % 4) d.x = d.parent.x + (d.id - (size % 4)/2 + 1/2) * 75 - 212.5;
-                    else d.x = d.parent.x + (((d.id - (size % 4)) % 4) - 2) * 75 - 175;
+                    if (size < 4 || d.id >= Math.floor(size / 4) * 4) d.x = d.parent.x + (d.id % 4 - (size % 4) / 2 + 1 / 2) * 75 - 212.5;
+                    else d.x = d.parent.x + ((d.id % 4) - 2) * 75 - 175;
 
-                    if (Math.round(d.parent.y) > 0) d.y = d.parent.y + 100 * (Math.floor((size - d.id - 1)/4) + 1);
-                    else d.y = d.parent.y - 100 * (Math.floor((size - d.id - 1)/4) + 1);
+                    d.y = d.parent.y + 100 * (Math.floor(d.id / 4) + 1);
                 } else if (d.type === "enemy") {
                     size = champEnemies[d.parent.name].size;
 
-                    if (d.id < size % 5) d.x = d.parent.x + (d.id - (size % 5)/2 + 1/2) * 75 + 250;
-                    else d.x = d.parent.x + (((d.id - (size % 5)) % 5) - 2) * 75 + 250;
+                    if (size < 5 || d.id >= Math.floor(size / 5) * 5) d.x = d.parent.x + (d.id % 5 - (size % 5) / 2 + 1 / 2) * 75 + 250;
+                    else d.x = d.parent.x + ((d.id % 5) - 2) * 75 + 250;
 
-                    if (Math.round(d.parent.y) > 0) d.y = d.parent.y + 100 * (Math.floor((size - d.id - 1)/5) + 1);
-                    else d.y = d.parent.y - 100 * (Math.floor((size - d.id - 1)/5) + 1);
+                    d.y = d.parent.y + 100 * (Math.floor(d.id / 5) + 1);
                 } else if (d.type === "champion" && root.children.length === 1) {
                     d.x = d.parent.x;
                     d.y = d.parent.y - 100;
-                } else
-                {
-                    var coeff     = 0;
-                    var denom     = 0;
-                    var product   = 0;
-                    var inner     = 100;
-                    var biginner  = 150;
-                    var mid       = 250;
-                    var bigmid    = 300;
-                    var outer     = 400;
-                    var bigouter  = 450;
-                    var extra     = 550;
+                } else {
+                    var coeff = 0;
+                    var denom = 0;
+                    var product = 0;
+                    var inner = 100;
+                    var biginner = 150;
+                    var mid = 250;
+                    var bigmid = 300;
+                    var outer = 400;
+                    var bigouter = 450;
+                    var extra = 550;
 
                     if (d.type === "info") coeff += radius;
                     if (d.id < 8 && (nodeCount <= 8 || nodeCount >= 14)) { // inner
                         coeff += inner;
                         denom = Math.min(nodeCount, 8);
-                        product = d.id/denom * 2 * Math.PI;
+                        product = d.id / denom * 2 * Math.PI;
                         d.x = -Math.cos(product) * coeff;
                         d.y = -Math.sin(product) * coeff;
-                    }
-                    else if (d.id < 14 && nodeCount > 8 && nodeCount < 14) { // biginner
+                    } else if (d.id < 14 && nodeCount > 8 && nodeCount < 14) { // biginner
                         coeff += biginner;
                         denom = nodeCount;
-                        product = d.id/denom * 2 * Math.PI;
+                        product = d.id / denom * 2 * Math.PI;
                         d.x = -Math.cos(product) * coeff;
                         d.y = -Math.sin(product) * coeff;
-                    }
-                    else if (d.id < 28 && (nodeCount <= 28 || nodeCount >= 34)) { // mid
+                    } else if (d.id < 28 && (nodeCount <= 28 || nodeCount >= 34)) { // mid
                         coeff += mid;
                         denom = Math.min(nodeCount - 8, 20);
-                        product = (d.id-8)/denom * 2 * Math.PI;
+                        product = (d.id - 8) / denom * 2 * Math.PI;
                         d.x = -Math.cos(product) * coeff;
                         d.y = -Math.sin(product) * coeff;
-                    }
-                    else if (d.id < 34 && nodeCount > 28 && nodeCount < 34) { // bigmid
+                    } else if (d.id < 34 && nodeCount > 28 && nodeCount < 34) { // bigmid
                         coeff += bigmid;
                         denom = nodeCount - 8;
-                        product = (d.id-8)/denom * 2 * Math.PI;
+                        product = (d.id - 8) / denom * 2 * Math.PI;
                         d.x = -Math.cos(product) * coeff;
                         d.y = -Math.sin(product) * coeff;
-                    }
-                    else if (d.id < 60 && (nodeCount <= 60 || nodeCount >= 66)){ // outer
+                    } else if (d.id < 60 && (nodeCount <= 60 || nodeCount >= 66)) { // outer
                         coeff += outer;
                         denom = Math.min(nodeCount - 28, 32);
-                        product = (d.id-28)/denom * 2 * Math.PI;
+                        product = (d.id - 28) / denom * 2 * Math.PI;
                         d.x = -Math.cos(product) * coeff;
                         d.y = -Math.sin(product) * coeff;
-                    }
-                    else if (d.id < 66 && nodeCount > 60 && nodeCount < 66) { // bigouter
+                    } else if (d.id < 66 && nodeCount > 60 && nodeCount < 66) { // bigouter
                         coeff += bigouter;
                         denom = nodeCount - 28;
-                        product = (d.id-28)/denom * 2 * Math.PI;
+                        product = (d.id - 28) / denom * 2 * Math.PI;
                         d.x = -Math.cos(product) * coeff;
                         d.y = -Math.sin(product) * coeff;
-                    }
-                    else if (d.id < 100) { // extra
+                    } else if (d.id < 100) { // extra
                         coeff += extra;
                         denom = nodeCount - 60;
-                        product = (d.id-60)/denom * 2 * Math.PI;
+                        product = (d.id - 60) / denom * 2 * Math.PI;
                         d.x = -Math.cos(product) * coeff;
                         d.y = -Math.sin(product) * coeff;
-                    }
-                    else {
-                        product = (d.id-100)/d.parent.count * 2 * Math.PI;
+                    } else {
+                        product = (d.id - 100) / d.parent.count * 2 * Math.PI;
                         d.x = -Math.cos(product) * 300;
                         d.y = -Math.sin(product) * 300;
                     }
@@ -420,23 +424,93 @@
 
             nodeEnter.append("circle")
                 .attr("class", "node-circle")
-                .attr("id", function(d) {
+                .attr("id", function (d) {
                     return d.id;
                 })
-                .attr("stroke", function(d) {
+                .attr("stroke", function (d) {
                     if (d.type === "ally" || d.type === "enemy") {
-                        return "hsl(" + (d.ratio * 6/5) + ", 50%, 50%)";
-                    } else {
-                        return "white";
+                        return "hsl(" + (d.ratio * 6 / 5) + ", 50%, 50%)";
+                    }
+                    else return "white";
+                })
+                .attr("stroke-width", function (d) {
+                    // if (d.type === "ally" || d.type === "enemy") return 8;
+                    if (d.type === "ally" || d.type === "enemy") return 6 + d.win * 2 + d.loss * 2;
+                    else return 3;
+                })
+                .on("mouseenter", function (d) {
+                    if (d.type === "champion" && !root._children) {
+                        d3.select(this).transition()
+                            .duration(duration/4)
+                            .attr("r", function (d) {
+                                return (small + 8 * Math.log(d.count + 1) / 2) * 9 / 8;
+                            });
+
+                        node.selectAll("circle.clip-circle")
+                            .filter( function (c) {
+                                return c === d
+                            })
+                            .transition()
+                            .duration(duration/4)
+                            .attr("r", function (d) {
+                                return (small + 8 * Math.log(d.count + 1) / 2) * 9 / 8;
+                            });
+
+                        node.selectAll("image")
+                            .filter( function (c) {
+                                return c === d
+                            })
+                            .transition()
+                            .duration(duration/4)
+                            .attr("x", function(d) {
+                                return (-small-7 - 8*Math.log(d.count+1)/2)*9/8;
+                            }).attr("y", function(d) {
+                                return (-small-7 - 8*Math.log(d.count+1)/2)*9/8;
+                            }).attr("width", function(d) {
+                                return (small*2+14 + 8*Math.log(d.count+1))*9/8;
+                            }).attr("height", function(d) {
+                                return (small*2+14 + 8*Math.log(d.count+1))*9/8;
+                            });
                     }
                 })
-                .attr("stroke-width", function(d) {
-                    if (d.type === "ally" || d.type === "enemy") return 8;
-                    else return 3;
+                .on("mouseleave", function (d) {
+                    if (d.type === "champion" && !root._children) {
+                        d3.select(this).transition()
+                            .duration(duration/4)
+                            .attr("r", function (d) {
+                                return small + 8 * Math.log(d.count + 1) / 2;
+                            });
+
+                        node.selectAll("circle.clip-circle")
+                            .filter( function (c) {
+                                return c === d
+                            })
+                            .transition()
+                            .duration(duration/4)
+                            .attr("r", function (d) {
+                                return (small + 8 * Math.log(d.count + 1) / 2);
+                            });
+
+                        node.selectAll("image")
+                            .filter( function (c) {
+                                return c === d
+                            })
+                            .transition()
+                            .duration(duration/4)
+                            .attr("x", function(d) {
+                                return -small-7 - 8*Math.log(d.count+1)/2;
+                            }).attr("y", function(d) {
+                                return -small-7 - 8*Math.log(d.count+1)/2;
+                            }).attr("width", function(d) {
+                                return small*2+14 + 8*Math.log(d.count+1);
+                            }).attr("height", function(d) {
+                                return small*2+14 + 8*Math.log(d.count+1);
+                            });
+                    }
                 });
 
             nodeEnter.append("clipPath")
-                .attr("id", function(d) {
+                .attr("id", function (d) {
                     if (d.type === "champion" || d.type === "root") return "clip" + d.id;
                     else return "clip";
                 })
@@ -446,14 +520,14 @@
                 .attr("cy", 0);
 
             nodeEnter.append("image")
-                .attr("id",  function(d) {
+                .attr("id", function (d) {
                     return "image " + d.id;
                 })
-                .attr("href",  function(d) {
+                .attr("href", function (d) {
                     if (d.type === "root") return infUrl;
                     else return d.img;
                 })
-                .attr("clip-path", function(d) {
+                .attr("clip-path", function (d) {
                     if (d.type === "champion" || d.type === "root") return "url(#clip" + d.id + ")";
                     else return "url(#clip)";
                 })
@@ -462,54 +536,30 @@
             nodeEnter.append("text")
                 .attr('class', 'winrate')
                 .attr("x", -radius)
-                .attr("y", function(d) {
+                .attr("y", function (d) {
                     if (d.type === "champion" && (d.win + d.loss + d.remake) > 0) return -radius;
                     else if (d.type === "ally" || d.type === "enemy") return -small;
                 })
                 .attr("dx", radius)
                 .attr("dy", ".3em")
-                .attr("text-anchor", "middle")
+                .attr("text-anchor", "left")
                 .attr("pointer-events", "none")
-                .text(function (d) {
-                    if (d.type === "champion" && d.win + d.loss === 0 && typeof d._children !== "undefined") {
-                        return "No games complete: only remakes";
-                    }
-                    else if (d.type === "ally" || d.type === "enemy" || d.type === "champion" && d.children != null) {
-                        return d.win + "-" + d.loss;
-                    }
-                })
                 .style("fill-opacity", 0);
 
             nodeEnter.append("text")
                 .attr('class', 'title')
-                .attr("x", function(d) {
-                    if (d.type === "ally") {
-                        var a = champAllies[d.parent.name].size;
-                        return -radius * Math.min(3.26, a/1.15);
-                    }
-                    else if (d.type === "enemy") {
-                        var e = champEnemies[d.parent.name].size;
-                        return -radius * Math.min(4, e/1.18);
-                    }
-                })
-                .attr("y", function(d) {
-                    if (d.type === "ally") {
-                        return -small * 3 + Math.ceil(champAllies[d.parent.name].size / 4 - 1) * -small * 2.5;
-                    }
-                    else if (d.type === "enemy") {
-                        return -small * 3 + Math.ceil(champEnemies[d.parent.name].size / 5 - 1) * -small * 2.5;
-                    }
-                })
                 .attr("dx", radius)
                 .attr("dy", ".35em")
                 .attr("text-anchor", "middle")
+                .attr("alignment-baseline", "central")
                 .attr("pointer-events", "none")
                 .text(function (d) {
-                    if (d.type === "ally" && d.id === champAllies[d.parent.name].size - 1) {
-                        return "Ally";
-                    }
-                    else if (d.type === "enemy" && d.id === champEnemies[d.parent.name].size - 1) {
-                        return "Enemy";
+                    if (d.type === "champion") {
+                        return "Ally" +
+                            " \xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0" +
+                            "\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0" +
+                            "\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0\xa0" +
+                            "\xa0\xa0\xa0 Enemy\xa0\xa0\xa0\xa0\xa0";
                     }
                 })
                 .style("fill-opacity", 0)
@@ -523,35 +573,35 @@
                 });
 
             nodeUpdate.select("image")
-                .attr("x", function(d) {
+                .attr("x", function (d) {
                     if (d.type === "champion") {
-                        if (root._children || !root.searched) return -small-7;
-                        else return -small-7 - 8*Math.log(d.count+1)/2;
+                        if (root._children || !root.searched) return -small - 7;
+                        else return -small - 7 - 8 * Math.log(d.count + 1) / 2;
                     }
-                    else return -mini-6;
+                    else return -mini - 6;
                 })
-                .attr("y", function(d) {
+                .attr("y", function (d) {
                     if (d.type === "champion") {
-                        if (root._children || !root.searched) return -small-7;
-                        else return -small-7 - 8*Math.log(d.count+1)/2;
+                        if (root._children || !root.searched) return -small - 7;
+                        else return -small - 7 - 8 * Math.log(d.count + 1) / 2;
                     }
-                    else return -mini-6;
+                    else return -mini - 6;
                 })
-                .attr("width", function(d) {
+                .attr("width", function (d) {
                     if (d.type === "champion") {
-                        if (root._children || !root.searched) return small*2+14;
-                        else return small*2+14 + 8*Math.log(d.count+1);
+                        if (root._children || !root.searched) return small * 2 + 14;
+                        else return small * 2 + 14 + 8 * Math.log(d.count + 1);
                     }
-                    else return mini*2+12;
+                    else return mini * 2 + 12;
                 })
-                .attr("height", function(d) {
+                .attr("height", function (d) {
                     if (d.type === "champion") {
-                        if (root._children || !root.searched) return small*2+14;
-                        else return small*2+14 + 8*Math.log(d.count+1);
+                        if (root._children || !root.searched) return small * 2 + 14;
+                        else return small * 2 + 14 + 8 * Math.log(d.count + 1);
                     }
-                    else return mini*2+12;
+                    else return mini * 2 + 12;
                 })
-                .attr("opacity", function(d) {
+                .attr("opacity", function (d) {
                     if (d.type === "root") {
                         if (d._children) {
                             var child = root.children[0];
@@ -560,17 +610,17 @@
                         }
                         else return "0";
                     }
-                    else return "1"
+                    else return "1";
                 });
 
             nodeUpdate.select("circle.clip-circle")
                 .attr("class", "clip-circle")
                 .attr("cx", 0)
                 .attr("cy", 0)
-                .attr("r", function(d) {
+                .attr("r", function (d) {
                     if (d.type === "champion") {
                         if (root._children || !root.searched) return small;
-                        else return small + 8*Math.log(d.count+1)/2;
+                        else return small + 8 * Math.log(d.count + 1) / 2;
                     }
                     else if (d.type === "root") return radius;
                     else return 30;
@@ -578,20 +628,20 @@
                 .style("fill-opacity", 1);
 
             nodeUpdate.select("circle.node-circle")
-                .attr("highlight", function(d) {
+                .attr("highlight", function (d) {
                     return !!(d.type === "root" && (d._children || !d.searched));
                 })
-                .attr("glow", function(d) {
+                .attr("glow", function (d) {
                     return d.type === "champion" && !d.children && !(root._children || !root.searched);
                 })
-                .attr("r", function(d) {
+                .attr("r", function (d) {
                     if (d.type === "root") return small;
                     else if (d.type === "champion") {
                         if (root._children || !root.searched) return small;
-                        else return small + 8*Math.log(d.count+1)/2;
+                        else return small + 8 * Math.log(d.count + 1) / 2;
                     }
                     else if (d.type === "ally" || d.type === "enemy") return mini;
-                    else return small/2;
+                    else return small / 2;
                 })
                 .attr("pointer-events", function (d) {
                     if (d.type === "root") {
@@ -606,6 +656,40 @@
                     else return "none";
                 })
                 .style("fill-opacity", 1);
+
+            // nodeUpdate.select("circle")
+            //     .on("mouseenter", function(d) {
+            //         if (d.type === "champion"  && !root._children) {
+            //             node.selectAll("image")
+            //                 .filter( function (c) {
+            //                     return c === d
+            //                 }).attr("x", function(d) {
+            //                     return (-small-7 - 8*Math.log(d.count+1)/2)*9/8;
+            //                 }).attr("y", function(d) {
+            //                     return (-small-7 - 8*Math.log(d.count+1)/2)*9/8;
+            //                 }).attr("width", function(d) {
+            //                     return (small*2+14 + 8*Math.log(d.count+1))*9/8;
+            //                 }).attr("height", function(d) {
+            //                     return (small*2+14 + 8*Math.log(d.count+1))*9/8;
+            //                 });
+            //         }
+            //     })
+            //     .on("mouseleave", function(d) {
+            //         if (d.type === "champion" && !root._children) {
+            //             node.selectAll("image")
+            //                 .filter( function (c) {
+            //                     return c === d
+            //                 }).attr("x", function(d) {
+            //                     return -small-7 - 8*Math.log(d.count+1)/2;
+            //                 }).attr("y", function(d) {
+            //                     return -small-7 - 8*Math.log(d.count+1)/2;
+            //                 }).attr("width", function(d) {
+            //                     return small*2+14 + 8*Math.log(d.count+1);
+            //                 }).attr("height", function(d) {
+            //                     return small*2+14 + 8*Math.log(d.count+1);
+            //                 });
+            //         }
+            //     });
 
             nodeUpdate.select("text.winrate")
                 .attr("x", -radius)
@@ -622,24 +706,33 @@
                     if (d.type === "champion" && d.win + d.loss === 0 && (root._children || !root.searched)) {
                         if (d.remake > 0) return "No games complete: only remakes";
                         else return "Loading...";
-                    }
-                    else if (d.type === "ally" || d.type === "enemy" || d.type === "champion" && d.children != null) {
+                    } else if (d.type === "ally" || d.type === "enemy" || d.type === "champion" && d.children != null) {
                         return d.win + "-" + d.loss;
-                    }
-                    else if (d.type === "root" && d.children == null) {
-                        return "No data";
+                    } else if (d.type === "root") {
+                        if (d.children == null) {
+                            return "No data";
+                        } else if (focus && d._children) {
+                            var child = root.children[0];
+                            if (child.win + child.loss + child.remake > 0) return "BACK";
+                        }
                     }
                 })
                 .style("fill-opacity", 1);
 
             nodeUpdate.select("text.title")
-                .style("fill-opacity", 1);
+                .style("fill-opacity", function(d) {
+                    if (d.type === "champion") {
+                        if (d.children) return 1;
+                        else return 0;
+                    }
+                });
 
 
             var nodeExit = node.exit().transition()
                 .duration(duration)
                 .attr("transform", function (d) {
-                    return "translate(" + d.parent.x0 + "," + d.parent.y0 + ")";
+                    if (d.type === "ally" || d.type === "enemy") return "translate(" + d.parent.parent.x0 + "," + d.parent.parent.y0 + ")";
+                    else return "translate(" + d.parent.x0 + "," + d.parent.y0 + ")";
                 })
                 .remove();
 
@@ -669,80 +762,6 @@
                 d.x0 = d.x;
                 d.y0 = d.y;
             });
-
-            svgGroup.selectAll("circle")
-                .on("mouseenter", function(d) {
-                    if (d.type === "champion"  && !root._children) {
-                        node.selectAll("image")
-                            .filter( function (c) {
-                                return c === d
-                            })
-                            .attr("x", function(d) {
-                                return (-small-7 - 8*Math.log(d.count+1)/2)*9/8;
-                            })
-                            .attr("y", function(d) {
-                                return (-small-7 - 8*Math.log(d.count+1)/2)*9/8;
-                            })
-                            .attr("width", function(d) {
-                                return (small*2+14 + 8*Math.log(d.count+1))*9/8;
-                            })
-                            .attr("height", function(d) {
-                                return (small*2+14 + 8*Math.log(d.count+1))*9/8;
-                            });
-
-                        node.selectAll("circle.clip-circle")
-                            .filter( function (c) {
-                                return c === d
-                            })
-                            .attr("r", function(d) {
-                                return (small + 8*Math.log(d.count+1)/2)*9/8;
-                            });
-
-                        node.selectAll("circle.node-circle")
-                            .filter( function (c) {
-                                return c === d
-                            })
-                            .attr("r", function(d) {
-                                return (small + 8*Math.log(d.count+1)/2)*9/8;
-                            });
-                    }
-                })
-                .on("mouseleave", function(d) {
-                    if (d.type === "champion" && !root._children) {
-                        node.selectAll("image")
-                            .filter( function (c) {
-                                return c === d
-                            })
-                            .attr("x", function(d) {
-                                return -small-7 - 8*Math.log(d.count+1)/2;
-                            })
-                            .attr("y", function(d) {
-                                return -small-7 - 8*Math.log(d.count+1)/2;
-                            })
-                            .attr("width", function(d) {
-                                return small*2+14 + 8*Math.log(d.count+1);
-                            })
-                            .attr("height", function(d) {
-                                return small*2+14 + 8*Math.log(d.count+1);
-                            });
-
-                        node.selectAll("circle.clip-circle")
-                            .filter( function (c) {
-                                return c === d
-                            })
-                            .attr("r", function(d) {
-                                return (small + 8*Math.log(d.count+1)/2);
-                            });
-
-                        node.selectAll("circle.node-circle")
-                            .filter( function (c) {
-                                return c === d
-                            })
-                            .attr("r", function(d) {
-                                return small + 8*Math.log(d.count+1)/2;
-                            });
-                    }
-                })
         }
 
         function doneResizing(){
@@ -831,19 +850,20 @@
                         // lub 2672288481 NA 5v5 Ranked Solo/Duo Sejuani -- 1 remake only
                         gameCount++;
                         d.remake += 1;
-                        return;
+                        return true;
                     }
 
                     var pids = info.participantIdentities;
                     var mypid = -1;
                     var parts = info.participants;
-                    var ppteam = parts.length / 2;
 
                     if (!pids || !pids.length) {
                         console.log("pid fail", info);
                         console.log(d, gameId);
-                        return;
+                        return false;
                     }
+
+                    var ppteam = parts.length / 2;
 
                     if (mypid === -1) {
                         for (i=0; i<pids.length; i++) {
@@ -887,11 +907,12 @@
                     d.loss += (1 - win);
 
                     gameCount++;
+                    return true;
                 });
             };
 
-            $scope.searchEnemyHelper(d, gameId).then(function() {
-                if (gameCount === d.count) {
+            $scope.searchEnemyHelper(d, gameId).then(function(success) {
+                if (gameCount === d.count || !success) {
                     locked = false;
                     console.log(root.name + ":", d.count, "games as", d.name);
                     if (!d.children) {
@@ -905,30 +926,24 @@
 
                     for (champion in allyNodeInfo) {
                         if (allyNodeInfo.hasOwnProperty(champion)) {
-                            if (allies.length === 0) {
-                                allies = [allyNodeInfo[champion]];
-                            } else {
-                                binaryInsert(allies, allyNodeInfo[champion], 0, allies.length-1);
-                            }
+                            allies.push(allyNodeInfo[champion]);
                         }
                     }
+                    for (champion in enemyNodeInfo) {
+                        if (enemyNodeInfo.hasOwnProperty(champion)) {
+                            enemies.push(enemyNodeInfo[champion]);
+                        }
+                    }
+
+                    allies = allies.quick_sort(winrateComparator);
+                    enemies = enemies.quick_sort(winrateComparator);
+
                     allyNodeInfo["size"] = allies.length;
+                    enemyNodeInfo["size"] = enemies.length;
 
                     for (i = 0; i < allies.length; i++) {
                         allies[i].id = i;
                     }
-
-                    for (champion in enemyNodeInfo) {
-                        if (enemyNodeInfo.hasOwnProperty(champion)) {
-                            if (enemies.length === 0) {
-                                enemies = [enemyNodeInfo[champion]];
-                            } else {
-                                binaryInsert(enemies, enemyNodeInfo[champion], 0, enemies.length-1);
-                            }
-                        }
-                    }
-                    enemyNodeInfo["size"] = enemies.length;
-
                     for (i = 0; i < enemies.length; i++) {
                         enemies[i].id = i;
                     }
@@ -983,58 +998,17 @@
             };
 
             $scope.searchMatchesHelper().then(function() {
-                function insert(arr, item, start, end) {
-                    var half = Math.floor((start + end) / 2);
-                    var final = start === end;
-
-                    var count = item[1];
-                    var halfcount = arr[half][1];
-
-                    var name = item[0];
-                    var halfname = arr[half][0];
-
-                    if (count < halfcount) {
-                        if (final) {
-                            arr.splice(start+1, 0, item);
-                            return;
-                        }
-                        insert(arr, item, half+1, end);
-                    } else if (count > halfcount) {
-                        if (final) {
-                            arr.splice(start, 0, item);
-                            return;
-                        }
-                        insert(arr, item, start, half);
-                    } else {
-                        // compare names
-                        if (name < halfname) {
-                            if (final) {
-                                arr.splice(start, 0, item);
-                                return;
-                            }
-                            insert(arr, item, start, half);
-                        } else if (name > halfname) {
-                            if (final) {
-                                arr.splice(start+1, 0, item);
-                                return;
-                            }
-                            insert(arr, item, half+1, end);
-                        } else {
-                            console.log("Two nodes have the same name.")
-                        }
-                    }
+                var champNodes = [];
+                for (var key in champCounts) {
+                    champNodes.push([key, champCounts[key]])
                 }
+
+                champNodes = champNodes.quick_sort(champComparator);
 
                 nodeCount = 0;
-                var sorted = [];
-                for (var key in champCounts) {
-                    if (sorted.length === 0) sorted.push([key, champCounts[key]]);
-                    else insert(sorted, [key, champCounts[key]], 0, sorted.length - 1)
-                }
-
-                for (var i=0; i<sorted.length; i++) {
-                    var champion = sorted[i][0];
-                    var count = sorted[i][1];
+                while (nodeCount < champNodes.length) {
+                    var champion = champNodes[nodeCount][0];
+                    var count = champNodes[nodeCount][1];
                     var newNode = {
                         "name": champion,
                         "id": nodeCount++,
@@ -1128,6 +1102,7 @@
 
         window.addEventListener("resize", resize);
         $scope.init();
+        document.title = "Statly - Champion Matchups for League of Legends";
     });
 
 </script>

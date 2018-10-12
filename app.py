@@ -3,8 +3,8 @@ import requests
 
 app = Flask(__name__, static_url_path='/static')
 
-token = "INSERT KEY HERE"
-patch = "8.17.1"
+token = "RGAPI-8581288a-e9b3-44c8-bfcc-d7dc6e404a94"
+patch = "8.20.1"
 
 @app.route("/", methods=['GET'])
 def index():
