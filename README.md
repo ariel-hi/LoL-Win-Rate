@@ -1,6 +1,8 @@
 # LoL-Win-Rate
 ### League of Legends Win Rate Visualizer
 
+Now available on http://www.statly.xyz
+Currently waiting for an improved API Key.
 ___
 
 ##### One step to do before running:
@@ -13,7 +15,3 @@ Rate limit for these basic keys for reference:
 
 ___
 
-##### In progress:
-
-Transitioning from localhost to a dynamic website.
-Current plans are for the URL statly.xyz
