@@ -275,6 +275,7 @@
         function setTitle(title) {
             $scope.trustedName = $sce.trustAsHtml('<b style="text-align:center;display:grid;font-size:150%">' + title + '</b>');
         }
+        setTitle("~~ Statly.xyz ~~");
 
         Array.prototype.quick_sort = function (comp) {
             if (this.length < 2) { return this; }
