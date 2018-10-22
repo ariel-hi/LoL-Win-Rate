@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <head>
   <style type="text/css">
     #graph {
@@ -80,8 +81,6 @@
         var matches       = null;
         var summonerId    = "Welcome to Statly.xyz";
         var accountId     = 0;
-        // var patch         = "8.17.1";
-        // var imgUrl        = "http://ddragon.leagueoflegends.com/cdn/"+patch+"/img/champion/";
         var imgUrl        = "../static/icons/";
         var infUrl        = "../static/loading/fastinfinity.gif";
 
@@ -271,6 +270,10 @@
             var imgtype = ".png";
             if (champion === "Wukong") return url + "MonkeyKing" + imgtype;
             else return url + champion + imgtype;
+        }
+
+        function setTitle(title) {
+            $scope.trustedName = $sce.trustAsHtml('<b style="text-align:center;display:grid;font-size:150%">' + title + '</b>');
         }
 
         Array.prototype.quick_sort = function (comp) {
@@ -657,40 +660,6 @@
                 })
                 .style("fill-opacity", 1);
 
-            // nodeUpdate.select("circle")
-            //     .on("mouseenter", function(d) {
-            //         if (d.type === "champion"  && !root._children) {
-            //             node.selectAll("image")
-            //                 .filter( function (c) {
-            //                     return c === d
-            //                 }).attr("x", function(d) {
-            //                     return (-small-7 - 8*Math.log(d.count+1)/2)*9/8;
-            //                 }).attr("y", function(d) {
-            //                     return (-small-7 - 8*Math.log(d.count+1)/2)*9/8;
-            //                 }).attr("width", function(d) {
-            //                     return (small*2+14 + 8*Math.log(d.count+1))*9/8;
-            //                 }).attr("height", function(d) {
-            //                     return (small*2+14 + 8*Math.log(d.count+1))*9/8;
-            //                 });
-            //         }
-            //     })
-            //     .on("mouseleave", function(d) {
-            //         if (d.type === "champion" && !root._children) {
-            //             node.selectAll("image")
-            //                 .filter( function (c) {
-            //                     return c === d
-            //                 }).attr("x", function(d) {
-            //                     return -small-7 - 8*Math.log(d.count+1)/2;
-            //                 }).attr("y", function(d) {
-            //                     return -small-7 - 8*Math.log(d.count+1)/2;
-            //                 }).attr("width", function(d) {
-            //                     return small*2+14 + 8*Math.log(d.count+1);
-            //                 }).attr("height", function(d) {
-            //                     return small*2+14 + 8*Math.log(d.count+1);
-            //                 });
-            //         }
-            //     });
-
             nodeUpdate.select("text.winrate")
                 .attr("x", -radius)
                 .attr("y", function(d) {
@@ -847,7 +816,6 @@
                     var time = info.gameDuration;
 
                     if (time < 400) {
-                        // lub 2672288481 NA 5v5 Ranked Solo/Duo Sejuani -- 1 remake only
                         gameCount++;
                         d.remake += 1;
                         return true;
@@ -858,8 +826,12 @@
                     var parts = info.participants;
 
                     if (!pids || !pids.length) {
-                        console.log("pid fail", info);
-                        console.log(d, gameId);
+                        if (info.status && info.status.status_code === 403) {
+                            setTitle(summonerId + " (API Key expired)");
+                        }
+                        if (info.status && info.status.status_code === 429) {
+                            setTitle(summonerId + " (Rate limit exceeded. Please try again in a few minutes.)");
+                        }
                         return false;
                     }
 
@@ -873,11 +845,6 @@
                             }
                         }
                     }
-
-                    // darkx1731 NA ARAM -- 70 games
-                    // free NA 5v5 Blind Pick -- 76 games on Nami
-
-                    // cardonesos NA 3v3 Ranked Flex -- Katarina issue?
 
                     var player = parts[mypid];
                     var win = player.stats.win;
@@ -1051,7 +1018,15 @@
             };
 
             $scope.newGraph(name, region).then(function(data) {
-                if (data.status) return;
+                if (data.status) {
+                    if (data.status.status_code === 403) {
+                        setTitle("API Key expired. Contact admin for assistance.");
+                    }
+                    else if (data.status.status_code === 429) {
+                        setTitle("Rate limit exceeded. Please try again in a few minutes.");
+                    }
+                    return;
+                }
                 userregion = region;
                 userqueue = queue;
                 nodeCount = null;
@@ -1079,8 +1054,7 @@
                     "searched": false
                 };
 
-                $scope.trustedName = $sce.trustAsHtml('<b style="text-align:center;display:grid;font-size:150%">' + summonerId + '</b>');
-
+                setTitle(summonerId);
                 click(root);
             });
         };
